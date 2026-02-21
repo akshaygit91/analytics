@@ -1,0 +1,14 @@
+server:
+  port: ${SERVER_PORT:9000}
+
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+# All analytics behaviour is configurable via config or env (e.g. ANALYTICS_RATE_LIMIT_EVENTS_PER_SECOND)
+analytics:
+  rate-limit-events-per-second: ${ANALYTICS_RATE_LIMIT_EVENTS_PER_SECOND:100}
+  active-window-minutes: ${ANALYTICS_ACTIVE_WINDOW_MINUTES:5}
+  page-view-window-minutes: ${ANALYTICS_PAGE_VIEW_WINDOW_MINUTES:15}

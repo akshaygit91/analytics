@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>LiftLab Analytics</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      margin: 0;
+      padding: 2rem;
+      background: #f5f5f5;
+      color: #1a1a1a;
+    }
+    .container { max-width: 720px; margin: 0 auto; }
+    header {
+      margin-bottom: 2rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    h1 { font-size: 1.5rem; font-weight: 600; margin: 0; }
+    .sub { font-size: 0.875rem; color: #666; margin-top: 0.25rem; }
+    .card {
+      background: #fff;
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .card h2 {
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      margin: 0 0 0.75rem 0;
+    }
+    .card .value { font-size: 1.75rem; font-weight: 600; }
+    .card table { width: 100%; border-collapse: collapse; }
+    .card th, .card td { padding: 0.5rem 0; text-align: left; border-bottom: 1px solid #eee; }
+    .card th { font-size: 0.75rem; color: #666; text-transform: uppercase; }
+    .card tr:last-child td { border-bottom: none; }
+    .row {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .row input {
+      padding: 0.5rem 0.75rem;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 0.9375rem;
+      min-width: 140px;
+    }
+    .row button {
+      padding: 0.5rem 1rem;
+      background: #1a1a1a;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      cursor: pointer;
+    }
+    .row button:hover { background: #333; }
+    #activeUsers, #activeSessions { font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>LiftLab Analytics</h1>
+      <p class="sub">Next refresh in <span id="nextRefresh">2</span>s · <button id="refreshBtn" type="button">Refresh now</button> · <button id="modeBtn" type="button">Standard Mode (30s)</button></p>
+    </header>
+
+    <div class="card">
+      <h2>Active users (last 5 min)</h2>
+      <div id="activeUsers" class="value">–</div>
+    </div>
+
+    <div class="card">
+      <h2>Top 5 pages (last 15 min)</h2>
+      <table>
+        <thead><tr><th>Page</th><th>Views</th></tr></thead>
+        <tbody id="topPages"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Active sessions for user (last 5 min)</h2>
+      <div class="row">
+        <input id="userId" type="text" placeholder="e.g. usr_789" value="usr_789"/>
+        <button type="button" onclick="loadActiveSessions()">Fetch</button>
+      </div>
+      <div id="activeSessions" class="value" style="margin-top: 0.75rem;">–</div>
+    </div>
+  </div>
+
+  <script>
+    let REFRESH_INTERVAL = 2; // seconds (demo mode by default)
+    let isDemoMode = true;
+    let countdown = REFRESH_INTERVAL;
+    let countdownTimerId;
+    let refreshTimerId;
+
+    function startTimers() {
+      // Update countdown every second
+      document.getElementById('nextRefresh').textContent = countdown;
+      clearInterval(countdownTimerId);
+      countdownTimerId = setInterval(() => {
+        countdown = Math.max(0, countdown - 1);
+        document.getElementById('nextRefresh').textContent = countdown;
+      }, 1000);
+
+      // Schedule the periodic refresh
+      clearInterval(refreshTimerId);
+      refreshTimerId = setInterval(() => {
+        doRefresh();
+      }, REFRESH_INTERVAL * 1000);
+    }
+
+    async function doRefresh() {
+      // perform load and reset countdown
+      await loadAll();
+      countdown = REFRESH_INTERVAL;
+      document.getElementById('nextRefresh').textContent = countdown;
+    }
+    async function loadAll() {
+      await loadActiveUsers();
+      await loadTopPages();
+    }
+    async function loadActiveUsers() {
+      const r = await fetch('/metrics/active-users');
+      const j = await r.json();
+      document.getElementById('activeUsers').textContent = j.activeUsersCount ?? '-';
+    }
+    async function loadTopPages() {
+      const r = await fetch('/metrics/top-pages');
+      const j = await r.json();
+      const tbody = document.getElementById('topPages');
+      tbody.innerHTML = '';
+      (j.topPages || []).forEach(p => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td>' + (p.url || '-') + '</td><td>' + (p.count ?? 0) + '</td>';
+        tbody.appendChild(tr);
+      });
+    }
+    async function loadActiveSessions() {
+      const userId = document.getElementById('userId').value;
+      const r = await fetch('/metrics/active-sessions?userId=' + encodeURIComponent(userId));
+      const j = await r.json();
+      document.getElementById('activeSessions').textContent = j.activeSessionsCount ?? '-';
+    }
+    // initial load and start periodic refresh/countdown
+    loadAll().then(() => {
+      countdown = REFRESH_INTERVAL;
+      startTimers();
+    });
+
+    // wire manual refresh button
+    document.getElementById('refreshBtn').addEventListener('click', () => {
+      doRefresh();
+    });
+
+    // wire mode toggle button
+    document.getElementById('modeBtn').addEventListener('click', () => {
+      isDemoMode = !isDemoMode;
+      REFRESH_INTERVAL = isDemoMode ? 2 : 30;
+      const modeBtn = document.getElementById('modeBtn');
+      modeBtn.textContent = isDemoMode ? 'Standard Mode (30s)' : 'Demo Mode (2s)';
+      countdown = REFRESH_INTERVAL;
+      document.getElementById('nextRefresh').textContent = countdown;
+      startTimers();
+    });
+  </script>
+</body>
+</html>

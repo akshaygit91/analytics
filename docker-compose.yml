@@ -1,0 +1,43 @@
+# LiftLab Analytics – one-command startup
+# Usage: docker compose up -d
+# Dashboard: http://localhost:9000/
+# Optional: start mock generator to pump events (see README)
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  analytics-server:
+    build:
+      context: .
+      dockerfile: analytics-server/Dockerfile
+    ports:
+      - "9000:9000"
+    environment:
+      SERVER_PORT: 9000
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      ANALYTICS_RATE_LIMIT_EVENTS_PER_SECOND: 100
+      ANALYTICS_ACTIVE_WINDOW_MINUTES: 5
+      ANALYTICS_PAGE_VIEW_WINDOW_MINUTES: 15
+    depends_on:
+      redis:
+        condition: service_healthy
+
+   #Optional: uncomment to run the mock event generator (sends events until stopped)
+  analytics-generator:
+     build:
+       context: .
+       dockerfile: analytics-generator/Dockerfile
+     environment:
+       INGEST_URL: http://analytics-server:9000
+       INTERVAL_MS: 500
+     depends_on:
+       - analytics-server
