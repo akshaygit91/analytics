@@ -82,7 +82,9 @@ For a single region and moderate load, we can run multiple instances of the app 
 
 If Redis becomes the bottleneck, we can shard by metric type (e.g. one Redis for rate limit and active users, another for page-view buckets) or by tenant/user segment if we introduce tenancy. The `AnalyticsStore` abstraction makes it easier to introduce a different backend (e.g. a time-series DB for page views) without rewriting the rest.
 
-For very high throughput we’d typically introduce a queue: ingest writes to a stream or queue and returns 202, and workers consume and update ClickHouse which is optimized for events stream and propagate the same to Redis via CDC. That adds latency to the “real-time” view but lets we absorb spikes. The current design is synchronous so that we keep the demo simple and the behaviour easy to reason about.
+For high throughput, I would decouple ingestion from processing by introducing a durable stream (e.g., Kafka). The API would acknowledge with 202 once the event is persisted to the stream. Downstream consumers would write to ClickHouse for analytics and update Redis for low-latency reads. This adds small eventual consistency but protects the system from ingestion spikes and enables replay and backpressure handling. For the demo, I kept ingestion synchronous to reduce moving parts and keep behavior deterministic.
+
+In a production setup, I would treat the event stream (e.g., Kafka) as the source of truth and Redis as a derived, low-latency view, allowing replay, reprocessing, and recovery without data loss.
 
 ---
 
@@ -136,5 +138,9 @@ Tests cover the ingest and metrics controllers (valid event, rate limit, validat
 
 ## Assumptions
 
-- Timestamp in the payload is optional; if missing or invalid we use the time at ingest. Rate limit is 100 events/sec by default, overridden via config. Rolling windows are implemented with Redis sorted sets (score = event time) and minute-bucketed hashes for page views; we trim or expire so old data doesn’t grow unbounded.
-- Timestamp in the payload is optional; if missing we use server ingest time. Malformed timestamps are rejected with `400 Bad Request`. Rate limit is 100 events/sec by default, overridden via config. Rolling windows are implemented with Redis sorted sets (score = event time) and minute-bucketed hashes for page views; we trim or expire so old data doesn’t grow unbounded.
+- Timestamp in the payload is optional. If missing, server ingest time is used. If present but malformed, the request is rejected with `400 Bad Request` to avoid skewing time-based metrics.
+- Rate limit is 100 events/sec by default and configurable via environment variables.
+- Rolling windows are implemented using Redis sorted sets (score = event timestamp) and minute-bucketed hashes for page views.
+- Old data is trimmed or expired to prevent unbounded memory growth.
+- Raw events are not persisted; the system is optimized for near real-time metrics rather than historical analytics.
+- Single-region deployment is assumed for this implementation.
